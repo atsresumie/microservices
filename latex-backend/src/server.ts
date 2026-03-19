@@ -2,6 +2,7 @@ import express from "express";
 import type { Request, Response, NextFunction } from "express";
 import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
+import { spawnSync } from "node:child_process";
 import { getEnvConfig } from "./config/env.js";
 import { compileRoutes } from "./routes/compile.js";
 
@@ -27,7 +28,17 @@ app.get("/health", (_req: Request, res: Response) => {
 
 app.use(compileRoutes(env));
 
+function verifyCompilerDependency(): void {
+  const probe = spawnSync("latexmk", ["-v"], { stdio: "ignore" });
+  if (probe.error || probe.status !== 0) {
+    throw new Error(
+      "latexmk is not available on PATH. Install TeX Live/MacTeX locally or run this service via Docker."
+    );
+  }
+}
+
 async function startServer(): Promise<void> {
+  verifyCompilerDependency();
   await mkdir(env.tempRootDir, { recursive: true });
   await new Promise<void>((resolve, reject) => {
     const server = app.listen(env.port, env.host, () => resolve());

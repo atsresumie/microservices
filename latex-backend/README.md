@@ -69,12 +69,28 @@ Possible error codes:
 
 ## Local development
 
+### Requirements
+
+`latexmk` and a LaTeX distribution must be available on your host PATH.
+
+- macOS (Homebrew): `brew install --cask mactex-no-gui`
+- Linux: install TeX Live packages that include `latexmk`
+
+Check:
+
+```bash
+which latexmk
+latexmk -v
+```
+
 ```bash
 npm install
 npm run dev
 ```
 
 Default local URL: `http://localhost:8080`
+
+If `latexmk` is not installed locally, use Docker instead.
 
 ## Environment variables
 
