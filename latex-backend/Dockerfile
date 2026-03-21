@@ -25,8 +25,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   texlive-fonts-recommended \
   texlive-xetex \
   fonts-lmodern \
+  lmodern \
   fonts-dejavu \
   && rm -rf /var/lib/apt/lists/*
+
 
 WORKDIR /app
 COPY package.json ./
