@@ -30,17 +30,36 @@ Example response:
 
 ### `POST /compile/pdf`
 
-Request body:
+Request:
 
-```json
-{
-  "latex": "\\documentclass{article}\\begin{document}Hello\\end{document}",
-  "filename": "resume.pdf"
-}
+- `Content-Type`: `application/text` (or `text/plain`)
+- Body: raw LaTeX source text
+- Optional filename:
+  - query param: `?filename=resume.pdf`, or
+  - header: `x-filename: resume.pdf`
+
+Example:
+
+```bash
+curl -X POST "http://localhost:8080/compile/pdf?filename=resume.pdf" \
+  -H "Content-Type: application/text" \
+  --data-binary "\\documentclass{article}\\begin{document}Hello\\end{document}" \
+  --output resume.pdf
 ```
 
-- `latex` (required): full LaTeX document source
-- `filename` (optional): download filename for response header
+For larger payloads, prefer heredoc to avoid shell escaping issues:
+
+```bash
+curl -X POST "http://localhost:8080/compile/pdf?filename=resume.pdf" \
+  -H "Content-Type: application/text" \
+  --data-binary @- \
+  --output resume.pdf <<'EOF'
+\documentclass{article}
+\begin{document}
+Hello
+\end{document}
+EOF
+```
 
 Success response:
 
@@ -53,7 +72,8 @@ Error response shape:
 ```json
 {
   "error": "compile_failed",
-  "message": "LaTeX compilation failed"
+  "message": "LaTeX compilation failed",
+  "details": "...latexmk output tail..."
 }
 ```
 
@@ -66,6 +86,15 @@ Possible error codes:
 - `compiler_unavailable`
 - `missing_artifact`
 - `internal_error`
+
+## Troubleshooting
+
+- `{"error":"compile_failed",...}` usually means LaTeX source is invalid, not that the API is down.
+- Check `details` in the JSON response for the exact TeX error and line number.
+- Common example:
+  - `Missing $ inserted` means unbalanced math delimiters.
+  - Wrong: `Inline math:  = mc^2$ \\`
+  - Correct: `Inline math: $E = mc^2$ \\`
 
 ## Local development
 

@@ -18,11 +18,14 @@ ENV TEMP_ROOT_DIR=/tmp/latex-work
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
   ca-certificates \
-  fonts-lmodern \
   latexmk \
-  texlive-fonts-recommended \
   texlive-latex-base \
   texlive-latex-recommended \
+  texlive-latex-extra \
+  texlive-fonts-recommended \
+  texlive-xetex \
+  fonts-lmodern \
+  fonts-dejavu \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

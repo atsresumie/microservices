@@ -17,12 +17,22 @@ type CompileResult = {
 export class CompileError extends Error {
   public readonly statusCode: number;
   public readonly code: string;
+  public readonly details?: string;
 
-  constructor(message: string, statusCode = 400, code = "compile_failed") {
+  constructor(message: string, statusCode = 400, code = "compile_failed", details?: string) {
     super(message);
     this.statusCode = statusCode;
     this.code = code;
+    this.details = details;
   }
+}
+
+function tailLog(output: string, maxLines = 40): string {
+  const lines = output
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter((line) => line.length > 0);
+  return lines.slice(-maxLines).join("\n");
 }
 
 async function runLatexMk(workingDir: string, timeoutMs: number): Promise<string> {
@@ -48,7 +58,7 @@ async function runLatexMk(workingDir: string, timeoutMs: number): Promise<string
 
     const timer = setTimeout(() => {
       proc.kill("SIGKILL");
-      reject(new CompileError("LaTeX compile timed out", 504, "compile_timeout"));
+      reject(new CompileError("LaTeX compile timed out", 504, "compile_timeout", tailLog(output)));
     }, timeoutMs);
 
     proc.once("error", (err) => {
@@ -62,7 +72,7 @@ async function runLatexMk(workingDir: string, timeoutMs: number): Promise<string
         resolve(output);
         return;
       }
-      reject(new CompileError(`LaTeX compilation failed`, 422, "compile_failed"));
+      reject(new CompileError("LaTeX compilation failed", 422, "compile_failed", tailLog(output)));
     });
   });
 }
