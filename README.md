@@ -16,26 +16,30 @@ Backend microservices that power the [ATSResumie](https://atsresume.com) platfor
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                     ATSResumie (Next.js)                     │
-│                                                              │
-│   /api/export-pdf ──────────┐    /api/analyze ───────┐       │
-│                              │                        │       │
-└──────────────────────────────┼────────────────────────┼───────┘
-                               ▼                        ▼
-                    ┌──────────────────┐     ┌──────────────────┐
-                    │  latex-backend   │     │    ATS_Score      │
-                    │  POST /compile   │     │  POST /analyze    │
-                    │  (Express+TeX)   │     │  (Express+NLP)    │
-                    │  :8080           │     │  :8081             │
-                    └──────────────────┘     └──────────────────┘
+┌──────────────────────────────────────────────────────────────────┐
+│                      ATSResumie (Next.js)                       │
+│                                                                  │
+│  /api/export-pdf ────┐  /api/analyze ────┐  /api/score ────┐    │
+│                       │                   │                 │    │
+└───────────────────────┼───────────────────┼─────────────────┼────┘
+                        ▼                   ▼                 ▼
+             ┌──────────────────┐  ┌──────────────────────────────┐
+             │  latex-backend   │  │         ATS_Score             │
+             │  POST /compile   │  │  POST /analyze (with JD)     │
+             │  (Express+TeX)   │  │  POST /analyze/general (PDF) │
+             │  :8080           │  │  (Express+NLP+pdfjs)         │
+             └──────────────────┘  │  :8081                       │
+                                   └──────────────────────────────┘
 ```
 
 ---
 
 ## ATS_Score Service
 
-A production-ready, deterministic ATS scoring engine that analyzes resumes against job descriptions — **no AI/LLM usage**, pure string/NLP logic.
+A production-ready, deterministic ATS scoring engine — **no AI/LLM usage**, pure string/NLP logic. Supports two modes:
+
+- **Job-targeted scoring** (`POST /analyze`) — scores a resume against a specific job description
+- **General scoring** (`POST /analyze/general`) — evaluates overall ATS-friendliness from a PDF (upload or Supabase URL)
 
 ### Quick Start
 
@@ -95,15 +99,77 @@ npm run dev   # → http://localhost:8081
 }
 ```
 
-### Scoring Formula
+#### `POST /analyze/general`
+
+General ATS score without a job description. Accepts a PDF via **file upload** or **URL**.
+
+**Option 1 — PDF binary upload (multipart):**
+
+```bash
+curl -X POST http://localhost:8081/analyze/general \
+  -F "resume=@resume.pdf;type=application/pdf"
+```
+
+**Option 2 — Supabase storage URL (JSON):**
+
+```bash
+curl -X POST http://localhost:8081/analyze/general \
+  -H "Content-Type: application/json" \
+  -d '{"resumeUrl":"https://your-project.supabase.co/storage/v1/object/public/resumes/file.pdf"}'
+```
+
+**Response:**
+
+```json
+{
+  "score": 39,
+  "breakdown": {
+    "sectionCompleteness": 80,
+    "formatting": 0,
+    "keywordStrength": 65,
+    "actionVerbs": 0,
+    "measurableResults": 0,
+    "contactInfo": 55
+  },
+  "sections": {
+    "summary": true, "experience": true, "skills": true,
+    "education": true, "certifications": false, "projects": false
+  },
+  "insights": {
+    "strengths": ["All core resume sections are present"],
+    "weaknesses": ["Resume formatting needs improvement", "..."],
+    "suggestions": ["Use more bullet points", "..."]
+  },
+  "metadata": {
+    "wordCount": 24,
+    "pageCount": 1,
+    "detectedKeywords": ["react", "node.js", "aws", "..."]
+  }
+}
+```
+
+### Scoring Formulas
+
+**`/analyze` (with JD):**
 
 | Dimension | Weight | Method |
 |-----------|--------|--------|
 | Keyword Match | 45% | JD keyword intersection with resume |
 | Experience Relevance | 20% | Jaccard similarity of token sets |
-| Section Completeness | 15% | Heuristic detection of Summary, Experience, Skills, Education |
+| Section Completeness | 15% | Heuristic detection of core sections |
 | Formatting | 10% | Bullet points, headers, structure, length |
 | Keyword Distribution | 10% | Spread of keywords across resume sections |
+
+**`/analyze/general` (no JD):**
+
+| Dimension | Weight | Method |
+|-----------|--------|--------|
+| Section Completeness | 25% | Core (Summary, Experience, Skills, Education) + bonus (Certs, Projects) |
+| Formatting | 20% | Bullet points, headers, structure, length |
+| Keyword Strength | 20% | Count of recognized industry/tech keywords |
+| Action Verbs | 15% | Unique strong verbs ("Built", "Led", "Designed", etc.) |
+| Measurable Results | 10% | Quantifiable achievements (percentages, dollar amounts, team sizes) |
+| Contact Info | 10% | Email, phone, LinkedIn, GitHub, website |
 
 ### Error Responses
 
@@ -115,6 +181,8 @@ npm run dev   # → http://localhost:8081
 |------|------|---------|
 | `validation_error` | 400 | Empty or missing fields |
 | `payload_too_large` | 413 | Input exceeds `MAX_INPUT_LENGTH` |
+| `pdf_error` | 4xx | PDF fetch failed or content-type mismatch |
+| `extraction_failed` | 422 | Could not extract text from PDF |
 | `internal_error` | 500 | Unexpected server error |
 
 ### Project Structure
@@ -128,9 +196,13 @@ ATS_Score/
 │   │   └── similarity.ts          # Jaccard similarity, set operations
 │   ├── services/
 │   │   ├── keywordExtractor.ts    # JD keyword extraction + tech dictionary
-│   │   ├── scorer.ts              # 5-dimension scoring engine
-│   │   └── analyzer.ts            # Orchestrator + insight generation
-│   ├── routes/analyze.ts          # POST /analyze route + validation
+│   │   ├── scorer.ts              # 5-dimension scoring engine (with JD)
+│   │   ├── generalScorer.ts       # 6-dimension scoring engine (no JD)
+│   │   ├── analyzer.ts            # Orchestrator + insights (with JD)
+│   │   └── pdfExtractor.ts        # PDF text extraction (buffer + URL)
+│   ├── routes/
+│   │   ├── analyze.ts             # POST /analyze (with JD)
+│   │   └── analyzeGeneral.ts      # POST /analyze/general (PDF input)
 │   └── server.ts                  # Express bootstrap + middleware
 ├── Dockerfile                     # Multi-stage (node:20-bookworm-slim)
 ├── .env.example
@@ -156,9 +228,9 @@ docker run --rm -p 8081:8081 ats-score
 
 ### Performance
 
-- **~2ms** processing time per request
-- Zero external API calls — fully self-contained
-- No heavy ML/NLP libraries
+- **~2–3ms** processing time per request
+- Zero external AI/LLM calls — fully self-contained
+- PDF parsing via `pdfjs-dist` (Mozilla PDF.js)
 
 ---
 
