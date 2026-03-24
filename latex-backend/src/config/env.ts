@@ -1,3 +1,10 @@
+import { config } from "dotenv";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+config({ path: path.resolve(__dirname, "../../../.env") });
+
 export type EnvConfig = {
   host: string;
   port: number;
@@ -32,7 +39,7 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
 export function getEnvConfig(): EnvConfig {
   return {
     host: process.env.HOST ?? DEFAULTS.HOST,
-    port: parsePositiveInt(process.env.PORT, DEFAULTS.PORT),
+    port: parsePositiveInt(process.env.LATEX_PORT ?? process.env.PORT, DEFAULTS.PORT),
     requestBodyLimitBytes: parsePositiveInt(
       process.env.REQUEST_BODY_LIMIT_BYTES,
       DEFAULTS.REQUEST_BODY_LIMIT_BYTES
@@ -42,3 +49,4 @@ export function getEnvConfig(): EnvConfig {
     tempRootDir: process.env.TEMP_ROOT_DIR ?? DEFAULTS.TEMP_ROOT_DIR
   };
 }
+

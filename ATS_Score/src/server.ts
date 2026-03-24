@@ -3,6 +3,7 @@ import type { Request, Response, NextFunction } from "express";
 import { randomUUID } from "node:crypto";
 import { getEnvConfig } from "./config/env.js";
 import { analyzeRoutes } from "./routes/analyze.js";
+import { analyzeGeneralRoutes } from "./routes/analyzeGeneral.js";
 
 const env = getEnvConfig();
 const app = express();
@@ -38,6 +39,7 @@ app.get("/health", (_req: Request, res: Response) => {
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
 app.use(analyzeRoutes(env));
+app.use(analyzeGeneralRoutes(env));
 
 // ─── Server Start ────────────────────────────────────────────────────────────
 
