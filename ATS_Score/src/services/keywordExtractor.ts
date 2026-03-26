@@ -46,13 +46,34 @@ const TECH_KEYWORDS = new Set([
  * even after stopword removal.
  */
 const GENERIC_WORDS = new Set([
-  "experience", "years", "team", "company", "role", "position",
-  "responsibilities", "requirements", "qualifications", "candidate",
-  "looking", "ideal", "join", "opportunity", "environment",
-  "strong", "excellent", "preferred", "required", "minimum",
-  "plus", "bonus", "benefit", "salary", "apply", "application",
-  "description", "title", "location", "remote", "hybrid", "onsite",
-  "full-time", "part-time", "contract",
+  // Roles / Structure
+  "experience", "years", "team", "company", "role", "position", "firm",
+  "responsibilities", "requirements", "qualifications", "candidate", "candidates",
+  "looking", "ideal", "join", "opportunity", "environment", "business", "clients",
+  // Adjectives
+  "strong", "excellent", "preferred", "required", "minimum", "nice", "basic",
+  "various", "multiple", "related", "equivalent", "fast-paced", "proven", "good",
+  "real", "small", "big", "large", "similar", "familiarity", "hands-on", "first",
+  // Benefits / Compensation
+  "plus", "bonus", "benefit", "benefits", "salary", "pay", "compensation",
+  // Hiring Process
+  "apply", "application", "description", "title", "location", "remote",
+  "hybrid", "onsite", "full-time", "part-time", "contract", "interview", "resume",
+  "portfolio", "link", "details", "reviews", 
+  // Education & background context
+  "bootcamp", "college", "university", "self-taught", "interest", "mentorship",
+  "ownership",
+  // Common action verbs & corporate speak
+  "build", "building", "serve", "serves", "ship", "code", "impact", "growing",
+  "collaborate", "participate", "learn", "train", "training", "delivering",
+  "deliver", "support", "contribute", "ensure", "maintain", "create", "develop",
+  "provide", "understand", "understanding", "knowledge", "ability", "willingness",
+  // Fillers & common context
+  "directly", "fully", "anywhere", "least", "day", "one", "alongside",
+  "including", "skills", "professional", "personal", "projects", "work",
+  "working", "help", "use", "make", "need", "needs", "take", "give", "get", "100",
+  // Specific unwanted words from JD reports
+  "canada", "construction", "buildcode", "decentralized"
 ]);
 
 export type KeywordResult = {
