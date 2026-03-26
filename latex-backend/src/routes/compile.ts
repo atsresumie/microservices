@@ -142,9 +142,10 @@ export function compileRoutes(options: RouteOptions): Router {
               level: "warn",
               message: "LaTeX compilation failed",
               requestId,
+              latexBytes: Buffer.byteLength(latex, "utf8"),
               errorCode: err.code,
               errorMessage: err.message,
-              details: err.details
+              compileLog: err.details
             })
           );
 
@@ -157,7 +158,9 @@ export function compileRoutes(options: RouteOptions): Router {
             level: "error",
             message: "Unexpected compile error",
             requestId,
-            error: err instanceof Error ? err.message : String(err)
+            latexBytes: Buffer.byteLength(latex, "utf8"),
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined
           })
         );
 

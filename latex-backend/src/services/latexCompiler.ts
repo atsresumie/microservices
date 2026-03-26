@@ -27,7 +27,7 @@ export class CompileError extends Error {
   }
 }
 
-function tailLog(output: string, maxLines = 40): string {
+function tailLog(output: string, maxLines = 120): string {
   const lines = output
     .split(/\r?\n/)
     .map((line) => line.trimEnd())
