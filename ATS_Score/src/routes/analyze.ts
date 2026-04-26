@@ -44,7 +44,7 @@ export function analyzeRoutes(options: RouteOptions): Router {
 
   router.post(
     "/analyze",
-    (req: Request<unknown, unknown, AnalyzeRequestBody>, res: Response) => {
+    async (req: Request<unknown, unknown, AnalyzeRequestBody>, res: Response) => {
       const requestId = res.locals.requestId as string | undefined;
 
       try {
@@ -102,7 +102,7 @@ export function analyzeRoutes(options: RouteOptions): Router {
         // ── Run analysis ───────────────────────────────────────────────────
 
         const start = performance.now();
-        const result = analyzeResume(resumeText, jobDescription);
+        const result = await analyzeResume(resumeText, jobDescription);
         const durationMs = Math.round(performance.now() - start);
 
         console.info(

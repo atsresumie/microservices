@@ -1,19 +1,27 @@
-import { normalizeText } from "../utils/textNormalize.js";
-import { extractKeywords, extractResumeKeywords } from "./keywordExtractor.js";
-import {
-  computeKeywordMatch,
-  computeExperienceRelevance,
-  computeSectionCompleteness,
-  computeFormattingScore,
-  computeKeywordDistribution,
-  computeFinalScore,
-  detectSections,
-  type ScoreBreakdown,
-  type SectionPresence,
-  type KeywordAnalysis,
-} from "./scorer.js";
+import { getAnthropicClient, getAnthropicModel } from "./aiClient.js";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
+
+export type ScoreBreakdown = {
+  keywordMatch: number;
+  experienceRelevance: number;
+  sectionCompleteness: number;
+  formatting: number;
+  keywordDistribution: number;
+};
+
+export type KeywordAnalysis = {
+  matched: string[];
+  missing: string[];
+  important: string[];
+};
+
+export type SectionPresence = {
+  summary: boolean;
+  experience: boolean;
+  skills: boolean;
+  education: boolean;
+};
 
 export type AnalysisResult = {
   score: number;
@@ -27,140 +35,143 @@ export type AnalysisResult = {
   };
 };
 
+// ─── Tool Schema ─────────────────────────────────────────────────────────────
+
+const SUBMIT_SCORE_TOOL = {
+  name: "submit_score",
+  description:
+    "Submit the final ATS analysis result for a resume against a job description. All scores are 0-100 integers.",
+  input_schema: {
+    type: "object",
+    properties: {
+      score: {
+        type: "integer",
+        minimum: 0,
+        maximum: 100,
+        description: "Final weighted ATS score (0-100).",
+      },
+      breakdown: {
+        type: "object",
+        properties: {
+          keywordMatch: { type: "integer", minimum: 0, maximum: 100 },
+          experienceRelevance: { type: "integer", minimum: 0, maximum: 100 },
+          sectionCompleteness: { type: "integer", minimum: 0, maximum: 100 },
+          formatting: { type: "integer", minimum: 0, maximum: 100 },
+          keywordDistribution: { type: "integer", minimum: 0, maximum: 100 },
+        },
+        required: [
+          "keywordMatch",
+          "experienceRelevance",
+          "sectionCompleteness",
+          "formatting",
+          "keywordDistribution",
+        ],
+        additionalProperties: false,
+      },
+      keywords: {
+        type: "object",
+        properties: {
+          matched: {
+            type: "array",
+            items: { type: "string" },
+            description: "Important JD keywords/skills present in the resume.",
+          },
+          missing: {
+            type: "array",
+            items: { type: "string" },
+            description: "Important JD keywords/skills missing from the resume.",
+          },
+          important: {
+            type: "array",
+            items: { type: "string" },
+            description: "All important keywords/skills extracted from the JD.",
+          },
+        },
+        required: ["matched", "missing", "important"],
+        additionalProperties: false,
+      },
+      sections: {
+        type: "object",
+        properties: {
+          summary: { type: "boolean" },
+          experience: { type: "boolean" },
+          skills: { type: "boolean" },
+          education: { type: "boolean" },
+        },
+        required: ["summary", "experience", "skills", "education"],
+        additionalProperties: false,
+      },
+      insights: {
+        type: "object",
+        properties: {
+          strengths: { type: "array", items: { type: "string" } },
+          weaknesses: { type: "array", items: { type: "string" } },
+          suggestions: { type: "array", items: { type: "string" } },
+        },
+        required: ["strengths", "weaknesses", "suggestions"],
+        additionalProperties: false,
+      },
+    },
+    required: ["score", "breakdown", "keywords", "sections", "insights"],
+    additionalProperties: false,
+  },
+} as const;
+
+// ─── System Prompt ───────────────────────────────────────────────────────────
+
+const SYSTEM_PROMPT = `You are a deterministic Applicant Tracking System (ATS) scoring engine. You evaluate a resume against a specific job description across five dimensions and return a structured score.
+
+Scoring dimensions and weights (final score is the weighted sum, rounded to integer 0-100):
+- keywordMatch (45%): Percentage of important JD keywords/skills/technologies present in the resume.
+- experienceRelevance (20%): How closely the candidate's experience descriptions overlap with the JD's responsibilities and required experience.
+- sectionCompleteness (15%): Presence of summary/profile, work experience, skills, and education sections.
+- formatting (10%): Use of bullet points, clear section headers, reasonable length, and consistent structure.
+- keywordDistribution (10%): Whether matched keywords appear across multiple sections of the resume rather than concentrated in one place.
+
+Rules:
+- All scores must be integers between 0 and 100.
+- "important" keywords should include the most relevant skills, technologies, and qualifications extracted from the job description (typically 10-30 items).
+- "matched" must be a subset of "important" that also appears in the resume.
+- "missing" must be the items in "important" that are absent from the resume.
+- Sections booleans must reflect actual presence in the resume text.
+- Provide concise, actionable insights: 2-5 strengths, 2-5 weaknesses, 2-5 suggestions. Suggestions should be concrete improvements the candidate can make.
+- Always call the submit_score tool. Do not produce free-form text.`;
+
 // ─── Main Analysis Function ─────────────────────────────────────────────────
 
-export function analyzeResume(resumeText: string, jobDescription: string): AnalysisResult {
-  // 1. Extract keywords from JD and resume
-  const jdKeywords = extractKeywords(jobDescription);
-  const resumeKeywords = extractResumeKeywords(resumeText);
+export async function analyzeResume(
+  resumeText: string,
+  jobDescription: string
+): Promise<AnalysisResult> {
+  const client = getAnthropicClient();
+  const model = getAnthropicModel();
 
-  // 2. Keyword matching
-  const keywordResult = computeKeywordMatch(resumeKeywords, jdKeywords);
+  const userMessage = `JOB DESCRIPTION:
+"""
+${jobDescription}
+"""
 
-  // 3. Experience relevance (Jaccard similarity on full token sets)
-  const jdTokens = normalizeText(jobDescription);
-  const resumeTokens = normalizeText(resumeText);
-  const experienceRelevance = computeExperienceRelevance(resumeTokens, jdTokens);
+RESUME:
+"""
+${resumeText}
+"""
 
-  // 4. Section detection & completeness
-  const sections = detectSections(resumeText);
-  const sectionCompleteness = computeSectionCompleteness(sections);
+Score this resume against the job description and submit the result via the submit_score tool.`;
 
-  // 5. Formatting
-  const formatting = computeFormattingScore(resumeText);
+  const response = await client.messages.create({
+    model,
+    max_tokens: 4096,
+    temperature: 0,
+    system: SYSTEM_PROMPT,
+    tools: [SUBMIT_SCORE_TOOL],
+    tool_choice: { type: "tool", name: "submit_score" },
+    messages: [{ role: "user", content: userMessage }],
+  });
 
-  // 6. Keyword distribution
-  const keywordDistribution = computeKeywordDistribution(resumeText, keywordResult.matched);
-
-  // 7. Build breakdown and final score
-  const breakdown: ScoreBreakdown = {
-    keywordMatch: keywordResult.score,
-    experienceRelevance,
-    sectionCompleteness,
-    formatting,
-    keywordDistribution,
-  };
-
-  const score = computeFinalScore(breakdown);
-
-  // 8. Generate insights
-  const insights = generateInsights(breakdown, keywordResult, sections, jdKeywords.important);
-
-  return {
-    score,
-    breakdown,
-    keywords: {
-      matched: keywordResult.matched,
-      missing: keywordResult.missing,
-      important: jdKeywords.important,
-    },
-    sections,
-    insights,
-  };
-}
-
-// ─── Insight Generation ─────────────────────────────────────────────────────
-
-function generateInsights(
-  breakdown: ScoreBreakdown,
-  keywordResult: { score: number; matched: string[]; missing: string[] },
-  sections: SectionPresence,
-  importantKeywords: string[]
-): AnalysisResult["insights"] {
-  const strengths: string[] = [];
-  const weaknesses: string[] = [];
-  const suggestions: string[] = [];
-
-  // ── Keyword Match Insights ─────────────────────────────────────────────
-
-  if (breakdown.keywordMatch >= 75) {
-    strengths.push("Strong keyword alignment with the job description");
-  } else if (breakdown.keywordMatch >= 50) {
-    strengths.push("Moderate keyword match with the job description");
-  } else {
-    weaknesses.push("Low keyword match with the job description");
+  const toolUse = response.content.find((block) => block.type === "tool_use");
+  if (!toolUse || toolUse.type !== "tool_use" || toolUse.name !== "submit_score") {
+    throw new Error("Anthropic response did not include the submit_score tool call");
   }
 
-  if (keywordResult.missing.length > 0 && keywordResult.missing.length <= 10) {
-    suggestions.push(`Add missing keywords: ${keywordResult.missing.join(", ")}`);
-  } else if (keywordResult.missing.length > 10) {
-    const topMissing = keywordResult.missing.slice(0, 8);
-    suggestions.push(
-      `Add missing keywords (top ${topMissing.length} of ${keywordResult.missing.length}): ${topMissing.join(", ")}`
-    );
-  }
-
-  // ── Section Insights ───────────────────────────────────────────────────
-
-  const sectionKeys = Object.keys(sections) as (keyof SectionPresence)[];
-  const presentSections = sectionKeys.filter((k) => sections[k]);
-  const missingSections = sectionKeys.filter((k) => !sections[k]);
-
-  if (presentSections.length === sectionKeys.length) {
-    strengths.push("All essential resume sections are present");
-  } else if (presentSections.length >= 3) {
-    strengths.push("Good section coverage in the resume");
-  }
-
-  if (missingSections.length > 0) {
-    const sectionNames: Record<keyof SectionPresence, string> = {
-      summary: "Summary/Profile",
-      experience: "Work Experience",
-      skills: "Skills/Technologies",
-      education: "Education",
-    };
-    for (const section of missingSections) {
-      weaknesses.push(`Missing ${sectionNames[section]} section`);
-      suggestions.push(`Include a ${sectionNames[section]} section`);
-    }
-  }
-
-  // ── Experience Relevance Insights ──────────────────────────────────────
-
-  if (breakdown.experienceRelevance >= 60) {
-    strengths.push("Experience closely aligns with job requirements");
-  } else if (breakdown.experienceRelevance < 30) {
-    weaknesses.push("Limited overlap between your experience and the job requirements");
-    suggestions.push("Tailor your experience descriptions to mirror the language in the job posting");
-  }
-
-  // ── Formatting Insights ────────────────────────────────────────────────
-
-  if (breakdown.formatting >= 70) {
-    strengths.push("Well-formatted resume with good structure");
-  } else if (breakdown.formatting < 40) {
-    weaknesses.push("Resume formatting could be improved");
-    suggestions.push("Use more bullet points to highlight achievements and responsibilities");
-  }
-
-  // ── Keyword Distribution Insights ──────────────────────────────────────
-
-  if (breakdown.keywordDistribution >= 60) {
-    strengths.push("Keywords are well distributed throughout the resume");
-  } else if (breakdown.keywordDistribution < 30 && keywordResult.matched.length > 0) {
-    weaknesses.push("Keywords are concentrated in one area of the resume");
-    suggestions.push("Distribute relevant keywords across multiple sections for better ATS coverage");
-  }
-
-  return { strengths, weaknesses, suggestions };
+  return toolUse.input as AnalysisResult;
 }
