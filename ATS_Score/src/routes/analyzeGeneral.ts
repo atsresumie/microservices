@@ -145,7 +145,7 @@ export function analyzeGeneralRoutes(options: RouteOptions): Router {
         // ── Run general scoring ───────────────────────────────────────────
 
         const start = performance.now();
-        const result = scoreResumeGeneral(resumeText, pageCount);
+        const result = await scoreResumeGeneral(resumeText, pageCount);
         const durationMs = Math.round(performance.now() - start);
 
         console.info(
